@@ -39,10 +39,12 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                               f1_score, roc_auc_score, roc_curve,
                               confusion_matrix, classification_report)
 from sklearn.inspection import permutation_importance
+import joblib
 
 from preprocessing import preprocess_pipeline, FEATURE_COLS, TARGET_COL, FIG_DIR
 
 TABLE_DIR = os.path.join(os.path.dirname(__file__), "..", "results", "tables")
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 
 RANDOM_STATE = 42
 
@@ -191,7 +193,102 @@ def plot_feature_importance(best_model_name, models_fitted, X_test, y_test, feat
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_DIR, "08_feature_importance.png"), dpi=130)
     plt.close()
+    
 
+def _safe_filename(name):
+    """Turns a model name like 'Logistic Regression' or 'SVM (RBF)' into a
+    filesystem-safe filename fragment: 'logistic_regression', 'svm_rbf'."""
+    import re
+    name = name.lower().replace(" ", "_")
+    name = re.sub(r"[^a-z0-9_]", "", name)
+    return name
+
+
+def save_models(models_fitted, scaler, best_model_name, results_df, selection_metric="F1"):
+    """
+    Persists trained models to disk as .pkl files (via joblib), with the
+    model's name baked into the filename so it's immediately obvious which
+    model is saved without opening the file (e.g. best_model_adaboost.pkl,
+    not a generic best_model.pkl that silently changes meaning between runs).
+
+    Saves TWO models deliberately:
+      1. The actual best-performing model on this run, selected by
+         `selection_metric` (default F1 -- more clinically meaningful than
+         raw Accuracy for a diagnosis task, since it balances precision and
+         recall rather than being skewed by class imbalance).
+      2. AdaBoost specifically, because Mujumdar & Vaidehi (2019) -- our
+         primary ML source paper -- found AdaBoost was their best performer
+         after pipelining (98.8% accuracy). Saving it separately lets the
+         report make a direct comparison against the literature, regardless
+         of whether AdaBoost happens to also be the best model this run.
+
+    Any stale best_model_*.pkl files from a previous run (with a different
+    winning model name) are removed first, so the models/ folder never ends
+    up with confusing leftover files from an old run.
+    """
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
+    # Clear out any previous best_model_*.pkl so stale files don't linger
+    for f in os.listdir(MODEL_DIR):
+        if f.startswith("best_model_") and f.endswith(".pkl"):
+            os.remove(os.path.join(MODEL_DIR, f))
+
+    best_model = models_fitted[best_model_name]
+    best_metric_value = results_df.loc[results_df["Model"] == best_model_name, selection_metric].values[0]
+    best_bundle = {"model": best_model, "scaler": scaler,
+                   "feature_cols": FEATURE_COLS, "model_name": best_model_name,
+                   "selection_metric": selection_metric,
+                   "selection_metric_value": float(best_metric_value)}
+    best_filename = f"best_model_{_safe_filename(best_model_name)}.pkl"
+    best_path = os.path.join(MODEL_DIR, best_filename)
+    joblib.dump(best_bundle, best_path)
+
+    adaboost_model = models_fitted["AdaBoost"]
+    adaboost_acc = results_df.loc[results_df["Model"] == "AdaBoost", "Accuracy"].values[0]
+    adaboost_f1 = results_df.loc[results_df["Model"] == "AdaBoost", "F1"].values[0]
+    adaboost_bundle = {"model": adaboost_model, "scaler": scaler,
+                       "feature_cols": FEATURE_COLS, "model_name": "AdaBoost",
+                       "accuracy_this_run": float(adaboost_acc),
+                       "f1_this_run": float(adaboost_f1)}
+    adaboost_path = os.path.join(MODEL_DIR, "adaboost_model.pkl")
+    joblib.dump(adaboost_bundle, adaboost_path)
+
+    print(f"[ml_pipeline] Saved best model by {selection_metric} "
+          f"({best_model_name}, {selection_metric}={best_metric_value:.3f}) -> {best_path}")
+    print(f"[ml_pipeline] Saved AdaBoost (Acc={adaboost_acc:.3f}, F1={adaboost_f1:.3f}) -> {adaboost_path}")
+
+    if best_model_name != "AdaBoost":
+        print(f"[ml_pipeline] NOTE: best model here ({best_model_name}) differs from "
+              f"Mujumdar & Vaidehi (2019)'s best performer (AdaBoost, 98.8% accuracy "
+              f"in their pipelined result). Worth discussing this discrepancy in the "
+              f"report -- likely causes: different preprocessing choices, dataset "
+              f"variant, selection metric (F1 vs Accuracy), or hyperparameter differences.")
+    else:
+        print(f"[ml_pipeline] AdaBoost is the best model here too -- consistent with "
+              f"Mujumdar & Vaidehi (2019)'s finding. Good literature-agreement point "
+              f"for the report.")
+
+
+def load_saved_model(name="best"):
+    """
+    Loads a previously saved model bundle.
+    name: 'best' (auto-finds whichever best_model_*.pkl is present,
+    regardless of which model won) or 'adaboost'.
+    """
+    if name == "adaboost":
+        path = os.path.join(MODEL_DIR, "adaboost_model.pkl")
+    else:
+        candidates = [f for f in os.listdir(MODEL_DIR) if f.startswith("best_model_") and f.endswith(".pkl")] \
+            if os.path.isdir(MODEL_DIR) else []
+        if not candidates:
+            raise FileNotFoundError(f"No best_model_*.pkl found in {MODEL_DIR} -- run ml_pipeline.py first.")
+        path = os.path.join(MODEL_DIR, candidates[0])
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"No saved model at {path} -- run ml_pipeline.py first.")
+    bundle = joblib.load(path)
+    print(f"[ml_pipeline] Loaded model: {bundle['model_name']} (from {os.path.basename(path)})")
+    return bundle
 
 def run_ml_pipeline():
     df = preprocess_pipeline()
@@ -204,7 +301,7 @@ def run_ml_pipeline():
 
     print("\n[ml_pipeline] === Holdout evaluation ===")
     results_df, reports, roc_data = fit_and_evaluate_on_holdout(X_train, y_train, X_test, y_test)
-    results_df.to_csv(os.path.join(TABLE_DIR, "holdout_results.csv"), index=False)
+    
 
     # refit all models (fit_and_evaluate already did, but we need the objects for plotting)
     models_fitted = {}
@@ -216,8 +313,15 @@ def run_ml_pipeline():
     plot_roc_curves(roc_data)
     plot_accuracy_comparison(results_df)
 
+    SELECTION_METRIC = "F1"
+    results_df = results_df.sort_values(SELECTION_METRIC, ascending=False).reset_index(drop=True)
     best_model_name = results_df.iloc[0]["Model"]
+    results_df.to_csv(os.path.join(TABLE_DIR, "holdout_results.csv"), index=False)
+    print(f"[ml_pipeline] Selecting best model by {SELECTION_METRIC}: {best_model_name}")
+
     plot_feature_importance(best_model_name, models_fitted, X_test, y_test, FEATURE_COLS)
+
+    save_models(models_fitted, scaler, best_model_name, results_df, selection_metric=SELECTION_METRIC)
 
     # Save classification reports as text
     with open(os.path.join(TABLE_DIR, "classification_reports.txt"), "w") as f:
