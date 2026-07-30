@@ -1,0 +1,12 @@
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+scikit-learn
+sympy
+
+# Optional, add these on a machine with internet access for richer results:
+# xgboost
+# shap
+# tensorflow  (or) torch    # only needed if you want a deep-learning ANN instead of sklearn's MLPClassifier

@@ -1,0 +1,3 @@
+Regime,Initial Glucose,Peak Glucose,Time to Peak (min),Glucose AUC (approx.)
+normal,100,121.5,15.0,44903.5
+diabetic,160,180.5,16.0,100438.9
