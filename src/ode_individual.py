@@ -272,4 +272,4 @@ if __name__ == "__main__":
     plot_regime_comparison()
     plot_patient_demo(glucose0=148, predicted_class=1, patient_label="Example Patient A")
     summary_table()
-    batch_patient_demo(n_patients=8)
+    batch_patient_demo(n_patients=24)
