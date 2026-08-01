@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🩺 DBPS — Diabetes Prediction Using Mathematical Modelling & Machine Learning
+# DBPS — Diabetes Prediction Using Mathematical Modelling & Machine Learning
 
 **A hybrid framework linking differential-equation disease dynamics with supervised classification for diabetes risk prediction.**
 
@@ -8,7 +8,6 @@
 ![scikit--learn](https://img.shields.io/badge/scikit--learn-ML%20Pipeline-F7931E?style=flat&logo=scikitlearn&logoColor=white)
 ![SciPy](https://img.shields.io/badge/SciPy-ODE%20Solvers-8CAAE6?style=flat&logo=scipy&logoColor=white)
 ![SymPy](https://img.shields.io/badge/SymPy-Symbolic%20Math-3B5526?style=flat)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat)
 
 </div>
 
@@ -20,9 +19,9 @@ Most diabetes-prediction projects pick a lane: either a classifier trained on ta
 
 | Layer | Scale | Method | What it answers |
 |---|---|---|---|
-| 🧬 **Individual** | One patient | 3-equation nonlinear ODE system | *"What does this patient's glucose-insulin response look like over a day?"* |
-| 🌍 **Population** | A whole cohort | 5-compartment ODE system | *"How does the diabetic population evolve over 20 years under different interventions?"* |
-| 🤖 **Machine Learning** | Cross-sectional data | 12-classifier comparison | *"Given clinical features, is this patient diabetic?"* |
+|  **Individual** | One patient | 3-equation nonlinear ODE system | *"What does this patient's glucose-insulin response look like over a day?"* |
+|  **Population** | A whole cohort | 5-compartment ODE system | *"How does the diabetic population evolve over 20 years under different interventions?"* |
+| **Machine Learning** | Cross-sectional data | 12-classifier comparison | *"Given clinical features, is this patient diabetic?"* |
 
 The ML classifier's real, measured performance (its recall/sensitivity on held-out data) is used to select which physiological regime the individual ODE model simulates for a given patient, **and** to bound a realistic *range* of outcomes in the population model's early-screening scenario — a genuine, quantitative coupling between the classification layer and both mathematical models, not just a shared report.
 
