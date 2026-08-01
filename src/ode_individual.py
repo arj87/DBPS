@@ -177,8 +177,99 @@ def summary_table():
     print("[ode_individual] Summary table:\n", df.to_string(index=False))
     return df
 
+def batch_patient_demo(n_patients=8, save=True):
+    """
+    Runs the individual ODE simulation across several REAL patients (not
+    just one), using the ML pipeline's saved best model to predict each
+    patient's class, then selecting the corresponding ODE regime.
+
+    This gives the individual-level section comparable depth to the
+    population-level section instead of resting on a single-patient demo,
+    and is a genuine code-level link between Module B (ML) and Module C
+    (individual ODE) -- the saved model is actually loaded and used here,
+    not just referenced in the report narrative.
+
+    Prerequisites: run ml_pipeline.py first (so a saved best_model_*.pkl
+    exists).
+    """
+    import sys
+    sys.path.append(os.path.dirname(__file__))
+    from ml_pipeline import load_saved_model
+    from preprocessing import preprocess_pipeline, TARGET_COL
+
+    bundle = load_saved_model("best")
+    model = bundle["model"]
+    scaler = bundle["scaler"]
+    feature_cols = bundle["feature_cols"]
+
+    df = preprocess_pipeline(save_processed=False)
+
+    # Class-balanced sample: half actually-diabetic, half actually-not,
+    # so the grid shows both cases (and any misclassifications are visible)
+    n_each = n_patients // 2
+    sample_pos = df[df[TARGET_COL] == 1].sample(
+        n=min(n_each, (df[TARGET_COL] == 1).sum()), random_state=1)
+    sample_neg = df[df[TARGET_COL] == 0].sample(
+        n=min(n_each, (df[TARGET_COL] == 0).sum()), random_state=1)
+    sample = pd.concat([sample_pos, sample_neg]).reset_index(drop=True)
+
+    X_sample_scaled = scaler.transform(sample[feature_cols].values)
+    predicted = model.predict(X_sample_scaled)
+
+    n = len(sample)
+    ncols = 4
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows))
+    axes = np.array(axes).reshape(-1)
+
+    rows = []
+    for i, (idx, patient) in enumerate(sample.iterrows()):
+        glucose0 = patient["Glucose"]
+        actual = int(patient[TARGET_COL])
+        pred = int(predicted[i])
+        sol, regime = simulate_for_patient(glucose0, pred)
+
+        ax = axes[i]
+        ax.plot(sol.t, sol.y[1], linewidth=2,
+                color="tab:red" if pred == 1 else "tab:green")
+        ax.axhline(glucose0, color="gray", linestyle="--", linewidth=1)
+        match = "correct" if pred == actual else "MISCLASSIFIED"
+        ax.set_title(f"Patient {idx} | Actual={actual} Pred={pred} ({match})", fontsize=10)
+        ax.set_xlabel("Time (min)")
+        ax.set_ylabel("Glucose (mg/dl)")
+        ax.grid(True, alpha=0.4)
+
+        rows.append({
+            "PatientIndex": idx, "RealGlucose": glucose0,
+            "ActualOutcome": actual, "PredictedOutcome": pred,
+            "RegimeUsed": regime, "Correct": pred == actual,
+            "PeakGlucose": round(sol.y[1].max(), 1),
+        })
+
+    for j in range(n, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.suptitle("Individual-Level Glucose Simulation Across Real Patients (ML-Predicted Regime)", fontsize=14)
+    plt.tight_layout()
+    if save:
+        os.makedirs(FIG_DIR, exist_ok=True)
+        plt.savefig(os.path.join(FIG_DIR, "18_batch_patient_grid.png"), dpi=130)
+    plt.close()
+
+    summary = pd.DataFrame(rows)
+    if save:
+        os.makedirs(TABLE_DIR, exist_ok=True)
+        summary.to_csv(os.path.join(TABLE_DIR, "batch_patient_summary.csv"), index=False)
+
+    accuracy_on_sample = summary["Correct"].mean()
+    print(f"[ode_individual] Batch demo: {n} real patients, "
+          f"{accuracy_on_sample:.0%} correctly classified in this sample")
+    print(summary.to_string(index=False))
+
+    return summary
 
 if __name__ == "__main__":
     plot_regime_comparison()
     plot_patient_demo(glucose0=148, predicted_class=1, patient_label="Example Patient A")
     summary_table()
+    batch_patient_demo(n_patients=8)
